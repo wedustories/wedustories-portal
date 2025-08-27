@@ -1,47 +1,51 @@
 // backend/routes/bookings.js
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const Booking = require("../models/Booking");
+const multer = require('multer');
+const path = require('path');
+const controller = require('../controllers/bookingController');
 
-// ✅ Create booking
-router.post("/", async (req, res) => {
-  try {
-    const { clientName, email, phone, date, packageType, notes } = req.body;
+// Simple auth & admin placeholders (replace with your real middleware)
+const auth = (req, res, next) => {
+  // If you have JWT/session, decode and set req.user
+  // For now optionally set a dummy user for testing:
+  // req.user = { _id: '64abc...', name: 'Admin' };
+  next();
+};
+const adminOnly = (req, res, next) => {
+  // check req.user.role === 'admin'
+  next();
+};
 
-    // Basic validation
-    if (!clientName || !email || !phone || !date || !packageType) {
-      return res.status(400).json({ error: "Please fill all required fields" });
-    }
-
-    // Create booking document
-    const newBooking = new Booking({
-      clientName: clientName.trim(),
-      email: email.trim().toLowerCase(),
-      phone: phone.trim(),
-      date: new Date(date), // Ensure date object
-      packageType: packageType.trim(),
-      notes: notes ? notes.trim() : ""
-    });
-
-    // Save booking
-    const savedBooking = await newBooking.save();
-    res.status(201).json({ success: true, booking: savedBooking });
-
-  } catch (err) {
-    console.error("Error saving booking:", err);
-    res.status(500).json({ error: "Failed to save booking" });
+// Multer storage for booking attachments
+const uploadDir = path.join(__dirname, '..', 'uploads', 'bookings');
+require('fs').mkdirSync(uploadDir, { recursive: true });
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) { cb(null, uploadDir); },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname);
+    const name = `${Date.now()}-${Math.round(Math.random()*1e9)}${ext}`;
+    cb(null, name);
   }
 });
+const upload = multer({ storage });
 
-// ✅ Get all bookings
-router.get("/", async (req, res) => {
-  try {
-    const bookings = await Booking.find().sort({ date: 1 });
-    res.json({ success: true, bookings });
-  } catch (err) {
-    console.error("Error fetching bookings:", err);
-    res.status(500).json({ error: "Failed to fetch bookings" });
-  }
-});
+// Routes
+router.post('/', auth, controller.createBooking);                         // create
+router.get('/', auth, controller.listBookings);                           // list + filters
+router.get('/:id', auth, controller.getBookingById);                      // internal get
+router.get('/:id/public', controller.getBookingPublic);                   // public redacted
+
+router.put('/:id', auth, controller.updateBooking);                       // update
+router.patch('/:id', auth, controller.updateBooking);                     // partial update
+
+router.patch('/:id/assign', auth, controller.assignTeam);                 // assign team entries
+router.post('/:id/payments', auth, controller.addPayment);                // add payment
+router.post('/:id/attachments', auth, upload.array('files', 10), controller.uploadAttachments); // upload files
+
+router.patch('/:id/soft-delete', auth, controller.softDelete);
+router.patch('/:id/restore', auth, controller.restore);
+router.delete('/:id', auth, adminOnly, controller.deleteBooking);         // hard delete (admin)
 
 module.exports = router;
+
