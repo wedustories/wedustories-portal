@@ -1,51 +1,74 @@
-// backend/routes/bookings.js
-const express = require('express');
+// backend/routes/bookingRoutes.js
+const express = require("express");
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
-const controller = require('../controllers/bookingController');
+const path = require("path");
+const multer = require("multer");
+const Booking = require("../models/bookingModel");
+const controller = require("../controllers/bookingController");
 
-// Simple auth & admin placeholders (replace with your real middleware)
+// ===== Dummy auth & role middlewares (replace with real JWT/session auth) =====
 const auth = (req, res, next) => {
-  // If you have JWT/session, decode and set req.user
-  // For now optionally set a dummy user for testing:
-  // req.user = { _id: '64abc...', name: 'Admin' };
+  // Example: req.user = { _id: '64abc...', role: 'manager' };
   next();
 };
 const adminOnly = (req, res, next) => {
-  // check req.user.role === 'admin'
+  // if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
+  next();
+};
+const managerOrAbove = (req, res, next) => {
+  // if (!["admin","manager","ceo"].includes(req.user.role)) return res.status(403).json({ message: "Not allowed" });
   next();
 };
 
-// Multer storage for booking attachments
-const uploadDir = path.join(__dirname, '..', 'uploads', 'bookings');
-require('fs').mkdirSync(uploadDir, { recursive: true });
+// ===== Multer setup for attachments =====
+const uploadDir = path.join(__dirname, "..", "uploads", "bookings");
+require("fs").mkdirSync(uploadDir, { recursive: true });
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) { cb(null, uploadDir); },
-  filename: function (req, file, cb) {
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    const name = `${Date.now()}-${Math.round(Math.random()*1e9)}${ext}`;
+    const name = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
     cb(null, name);
-  }
+  },
 });
 const upload = multer({ storage });
 
-// Routes
-router.post('/', auth, controller.createBooking);                         // create
-router.get('/', auth, controller.listBookings);                           // list + filters
-router.get('/:id', auth, controller.getBookingById);                      // internal get
-router.get('/:id/public', controller.getBookingPublic);                   // public redacted
+// ===== Booking Routes =====
 
-router.put('/:id', auth, controller.updateBooking);                       // update
-router.patch('/:id', auth, controller.updateBooking);                     // partial update
+// ➡️ Create Booking
+router.post("/", auth, controller.createBooking);
 
-router.patch('/:id/assign', auth, controller.assignTeam);                 // assign team entries
-router.post('/:id/payments', auth, controller.addPayment);                // add payment
-router.post('/:id/attachments', auth, upload.array('files', 10), controller.uploadAttachments); // upload files
+// ➡️ List all Bookings (Admin / Reception)
+router.get("/", auth, controller.listBookings);
 
-router.patch('/:id/soft-delete', auth, controller.softDelete);
-router.patch('/:id/restore', auth, controller.restore);
-router.delete('/:id', auth, adminOnly, controller.deleteBooking);         // hard delete (admin)
+// ➡️ Get Booking by ID (Internal)
+router.get("/:id", auth, controller.getBookingById);
+
+// ➡️ Get Booking Public Redacted
+router.get("/:id/public", controller.getBookingPublic);
+
+// ➡️ Update Booking
+router.put("/:id", auth, controller.updateBooking);
+router.patch("/:id", auth, controller.updateBooking);
+
+// ➡️ Assign Team
+router.patch("/:id/assign", auth, controller.assignTeam);
+
+// ➡️ Add Payment
+router.post("/:id/payments", auth, controller.addPayment);
+
+// ➡️ Upload Attachments
+router.post("/:id/attachments", auth, upload.array("files", 10), controller.uploadAttachments);
+
+// ➡️ Soft Delete / Restore
+router.patch("/:id/soft-delete", auth, controller.softDelete);
+router.patch("/:id/restore", auth, controller.restore);
+
+// ➡️ Cancel / Postpone (Manager or Admin only)
+router.patch("/:id/cancel", auth, managerOrAbove, controller.cancelBooking);
+router.patch("/:id/postpone", auth, managerOrAbove, controller.postponeBooking);
+
+// ➡️ Hard Delete (Admin only)
+router.delete("/:id", auth, adminOnly, controller.deleteBooking);
 
 module.exports = router;
-
